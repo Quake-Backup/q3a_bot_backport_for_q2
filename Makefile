@@ -400,6 +400,7 @@ GAME_OBJS_ = \
 	game_q2/p_lag.o \
 	game_q2/p_menu.o \
 	game_q2/p_menulib.o \
+        game_q2/p_observer.o \
 	game_q2/p_trail.o \
 	game_q2/p_view.o \
 	game_q2/p_weapon.o \
