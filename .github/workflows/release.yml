@@ -63,15 +63,15 @@ jobs:
 
       - name: Package artifacts
         run: |
-          rm -rf gladiator
-          mkdir -p gladiator
-          cp release/game/game.so     gladiator/
-          cp release/botlib/botlib.so gladiator/
-          cp release/bspc/bspc        gladiator/
+          rm -rf q3bot
+          mkdir -p q3bot
+          cp release/game/game.so     q3bot/
+          cp release/botlib/botlib.so q3bot/
+          cp release/bspc/bspc        q3bot/
           for f in assets/*; do
-            cp -r "$f" gladiator/
+            cp -r "$f" q3bot/
           done
-          tar -czf q3a-bot-backport-linux-${{ matrix.arch }}.tar.gz gladiator
+          tar -czf q3a-bot-backport-linux-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v6
@@ -115,18 +115,18 @@ jobs:
       - name: Package artifacts
         shell: pwsh
         run: |
-          if (Test-Path gladiator) { Remove-Item gladiator -Recurse -Force }
-          New-Item -ItemType Directory -Force -Path gladiator | Out-Null
+          if (Test-Path q3bot) { Remove-Item q3bot -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path q3bot | Out-Null
 
-          Copy-Item release\game\game.dll     gladiator
-          Copy-Item release\botlib\botlib.dll gladiator
-          Copy-Item release\bspc\bspc.exe     gladiator
+          Copy-Item release\game\game.dll     q3bot
+          Copy-Item release\botlib\botlib.dll q3bot
+          Copy-Item release\bspc\bspc.exe     q3bot
 
           Get-ChildItem assets -Force | ForEach-Object {
-            Copy-Item $_.FullName -Destination gladiator -Recurse -Force
+            Copy-Item $_.FullName -Destination q3bot -Recurse -Force
           }
 
-          Compress-Archive -Path gladiator -DestinationPath q3a-bot-backport-windows-${{ matrix.arch }}.zip -Force
+          Compress-Archive -Path q3bot -DestinationPath q3a-bot-backport-windows-${{ matrix.arch }}.zip -Force
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v6
@@ -160,15 +160,15 @@ jobs:
 
       - name: Package artifacts
         run: |
-          rm -rf gladiator
-          mkdir -p gladiator
-          cp release/game/game.dylib     gladiator/
-          cp release/botlib/botlib.dylib gladiator/
-          cp release/bspc/bspc           gladiator/
+          rm -rf q3bot
+          mkdir -p q3bot
+          cp release/game/game.dylib     q3bot/
+          cp release/botlib/botlib.dylib q3bot/
+          cp release/bspc/bspc           q3bot/
           for f in assets/*; do
-            cp -r "$f" gladiator/
+            cp -r "$f" q3bot/
           done
-          tar -czf q3a-bot-backport-macos-${{ matrix.arch }}.tar.gz gladiator
+          tar -czf q3a-bot-backport-macos-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v6
