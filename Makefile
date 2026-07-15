@@ -26,8 +26,11 @@ else
 YQ2_OSTYPE ?= $(shell uname -s)
 endif
 
-# Special case for MinGW
+# Special case for MinGW and MSYS2 (both produce Windows PE32 DLLs via MinGW gcc)
 ifneq (,$(findstring MINGW,$(YQ2_OSTYPE)))
+YQ2_OSTYPE := Windows
+endif
+ifneq (,$(findstring MSYS,$(YQ2_OSTYPE)))
 YQ2_OSTYPE := Windows
 endif
 
@@ -113,16 +116,19 @@ endif
 ifeq ($(COMPILER), clang)
 	# -Wno-missing-braces because otherwise clang complains
 	#  about totally valid 'vec3_t bla = {0}' constructs.
-	CFLAGS += -Wno-missing-braces
+	override CFLAGS += -Wno-missing-braces
 else ifeq ($(COMPILER), gcc)
 	# -Wno-missing-braces because GCC spams about mframe_t array
 	# initializers in original Q2 monster code (valid C, just old style).
-	CFLAGS += -Wno-missing-braces
+	# override: the CI Linux matrix passes CFLAGS on the `make` command line
+	# for per-arch overrides (see release.yml); once CFLAGS has command-line
+	# origin, a plain += here would be silently dropped by GNU Make.
+	override CFLAGS += -Wno-missing-braces
 	# GCC 8.0 or higher.
 	ifeq ($(shell test $(COMPILERVER) -ge 80000; echo $$?),0)
 	    # -Wno-format-truncation and -Wno-format-overflow
 		# because GCC spams about 50 false positives.
-    	CFLAGS += -Wno-format-truncation -Wno-format-overflow
+    	override CFLAGS += -Wno-format-truncation -Wno-format-overflow
 	endif
 endif
 
@@ -187,36 +193,53 @@ all: game bspc botlib
 
 # ----------
 
+# When make is invoked by "make VERBOSE=1" print
+# the compiler and linker commands.
+
+ifdef VERBOSE
+Q :=
+else
+Q := @
+endif
+
+# ----------
+
 # Cleanup
 clean:
-	rm -Rf build release/*
+	@echo "===> CLEAN"
+	${Q}rm -Rf build release/*
 
 cleanall:
-	rm -Rf build release
+	@echo "===> CLEANALL"
+	${Q}rm -Rf build release
 
 # ----------
 
 # The gladiator game
 ifeq ($(YQ2_OSTYPE), Windows)
 game:
-	mkdir -p release/game
+	@echo "===> Building game.dll"
+	${Q}mkdir -p release/game
 	$(MAKE) release/game/game.dll
 
 build/game/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -o $@ $<
 
 release/game/game.dll : LDFLAGS += -shared
 
 else ifeq ($(YQ2_OSTYPE), Darwin)
 
 game:
-	mkdir -p release/game
+	@echo "===> Building game.dylib"
+	${Q}mkdir -p release/game
 	$(MAKE) release/game/game.dylib
 
 build/game/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -o $@ $<
 
 release/game/game.dylib : CFLAGS += -fPIC
 release/game/game.dylib : LDFLAGS += -shared
@@ -224,12 +247,14 @@ release/game/game.dylib : LDFLAGS += -shared
 else # not Windows or Darwin
 
 game:
-	mkdir -p release/game
+	@echo "===> Building game.so"
+	${Q}mkdir -p release/game
 	$(MAKE) release/game/game.so
 
 build/game/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -o $@ $<
 
 release/game/game.so : CFLAGS += -fPIC -Wno-unused-result
 release/game/game.so : LDFLAGS += -shared
@@ -241,24 +266,28 @@ endif
 
 ifeq ($(YQ2_OSTYPE), Windows)
 bspc:
-	mkdir -p release/bspc
+	@echo "===> Building bspc.exe"
+	${Q}mkdir -p release/bspc
 	$(MAKE) release/bspc/bspc.exe
 
 build/bspc/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -D_FORTIFY_SOURCE=2 -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -D_FORTIFY_SOURCE=2 -o $@ $<
 
 release/bspc/bspc.exe : LDFLAGS += -Wl,--allow-multiple-definition
 
 else ifeq ($(YQ2_OSTYPE), Darwin)
 
 bspc:
-	mkdir -p release/bspc
+	@echo "===> Building bspc"
+	${Q}mkdir -p release/bspc
 	$(MAKE) release/bspc/bspc
 
 build/bspc/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -D_FORTIFY_SOURCE=2 -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -D_FORTIFY_SOURCE=2 -o $@ $<
 
 release/bspc/bspc : CFLAGS += -fPIC
 release/bspc/bspc : LDFLAGS += -Wl,--allow-multiple-definition
@@ -266,12 +295,14 @@ release/bspc/bspc : LDFLAGS += -Wl,--allow-multiple-definition
 else # not Windows or Darwin
 
 bspc:
-	mkdir -p release/bspc
+	@echo "===> Building bspc"
+	${Q}mkdir -p release/bspc
 	$(MAKE) release/bspc/bspc
 
 build/bspc/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -D_FORTIFY_SOURCE=2 -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -D_FORTIFY_SOURCE=2 -o $@ $<
 
 release/bspc/bspc : CFLAGS += -fPIC -Wno-unused-result
 release/bspc/bspc : LDFLAGS += -Wl,--allow-multiple-definition
@@ -282,24 +313,28 @@ endif
 # The gladiator botlib
 ifeq ($(YQ2_OSTYPE), Windows)
 botlib:
-	mkdir -p release/botlib
+	@echo "===> Building botlib.dll"
+	${Q}mkdir -p release/botlib
 	$(MAKE) release/botlib/botlib.dll
 
 build/botlib/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
 
 release/botlib/botlib.dll : LDFLAGS += -shared -Wl,--kill-at
 
 else ifeq ($(YQ2_OSTYPE), Darwin)
 
 botlib:
-	mkdir -p release/botlib
+	@echo "===> Building botlib.dylib"
+	${Q}mkdir -p release/botlib
 	$(MAKE) release/botlib/botlib.dylib
 
 build/botlib/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
 
 release/botlib/botlib.dylib : CFLAGS += -fPIC
 release/botlib/botlib.dylib : LDFLAGS += -shared
@@ -307,12 +342,14 @@ release/botlib/botlib.dylib : LDFLAGS += -shared
 else # not Windows or Darwin
 
 botlib:
-	mkdir -p release/botlib
+	@echo "===> Building botlib.so"
+	${Q}mkdir -p release/botlib
 	$(MAKE) release/botlib/botlib.so
 
 build/botlib/%.o: %.c
-	mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
+	@echo "===> CC $<"
+	${Q}mkdir -p $(@D)
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
 
 release/botlib/botlib.so : CFLAGS += -fPIC -Wno-unused-result
 release/botlib/botlib.so : LDFLAGS += -shared
@@ -400,13 +437,12 @@ GAME_OBJS_ = \
 	game_q2/p_lag.o \
 	game_q2/p_menu.o \
 	game_q2/p_menulib.o \
-        game_q2/p_observer.o \
+    game_q2/p_observer.o \
 	game_q2/p_trail.o \
 	game_q2/p_view.o \
 	game_q2/p_weapon.o \
 	game_q2/q_shared.o
 	# qcommon_q2/files.o
-	# game_q2/p_observer.o \
 
 # ----------
 
@@ -535,13 +571,16 @@ BOTLIB_DEPS= $(BOTLIB_OBJS:.o=.d)
 # release/baseq2/game.so
 ifeq ($(YQ2_OSTYPE), Windows)
 release/game/game.dll : $(GAME_OBJS)
-	$(CC) -o $@ $(GAME_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(GAME_OBJS) $(LDFLAGS) -Wl,-Map,release/game/game.map
 else ifeq ($(YQ2_OSTYPE), Darwin)
 release/game/game.dylib : $(GAME_OBJS)
-	$(CC) -o $@ $(GAME_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(GAME_OBJS) $(LDFLAGS)
 else
 release/game/game.so : $(GAME_OBJS)
-	$(CC) -o $@ $(GAME_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(GAME_OBJS) $(LDFLAGS)
 endif
 
 # ----------
@@ -549,26 +588,32 @@ endif
 # release/bspc/bspc
 ifeq ($(YQ2_OSTYPE), Windows)
 release/bspc/bspc.exe : $(BSPC_OBJS)
-	$(CC) -o $@ $(BSPC_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(BSPC_OBJS) $(LDFLAGS) -Wl,-Map,release/bspc/bspc.map
 else ifeq ($(YQ2_OSTYPE), Darwin)
 release/bspc/bspc : $(BSPC_OBJS)
-	$(CC) -o $@ $(BSPC_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(BSPC_OBJS) $(LDFLAGS)
 else
 release/bspc/bspc : $(BSPC_OBJS)
-	$(CC) -o $@ $(BSPC_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(BSPC_OBJS) $(LDFLAGS)
 endif
 
 # ----------
 
 ifeq ($(YQ2_OSTYPE), Windows)
 release/botlib/botlib.dll : $(BOTLIB_OBJS)
-	$(CC) -o $@ $(BOTLIB_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(BOTLIB_OBJS) $(LDFLAGS) -Wl,-Map,release/botlib/botlib.map
 else ifeq ($(YQ2_OSTYPE), Darwin)
 release/botlib/botlib.dylib : $(BOTLIB_OBJS)
-	$(CC) -o $@ $(BOTLIB_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(BOTLIB_OBJS) $(LDFLAGS)
 else
 release/botlib/botlib.so : $(BOTLIB_OBJS)
-	$(CC) -o $@ $(BOTLIB_OBJS) $(LDFLAGS)
+	@echo "===> LD $@"
+	${Q}$(CC) -o $@ $(BOTLIB_OBJS) $(LDFLAGS)
 endif
 
 # ----------

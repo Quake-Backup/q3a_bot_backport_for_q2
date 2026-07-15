@@ -3,57 +3,100 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
     branches:
       - main
   pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Linux — x64 (native), 32-bit x86 (gcc-multilib -m32), and ARM cross builds:
+  # arm64/aarch64 and armhf. ARM targets are cross-compiled on the x86_64
+  # runner. bspc is built from source for every arch here (unlike the
+  # upstream Gladiator project, which vendors a single prebuilt x86 Linux
+  # bspc binary and runs it under box86 emulation on ARM).
+  # ---------------------------------------------------------------------------
   build-linux:
-    name: Build (Linux x86_64)
+    name: Build Linux ${{ matrix.arch }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cc: gcc
+            toolchain: ""
+            yq2arch: x86_64
+            archflags: ""
+          - arch: x86
+            cc: gcc
+            toolchain: gcc-multilib
+            yq2arch: i386
+            archflags: "-m32"
+          - arch: arm64
+            cc: aarch64-linux-gnu-gcc
+            toolchain: gcc-aarch64-linux-gnu
+            yq2arch: aarch64
+            archflags: ""
+          - arch: armhf
+            cc: arm-linux-gnueabihf-gcc
+            toolchain: gcc-arm-linux-gnueabihf
+            yq2arch: arm
+            archflags: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc make
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make ${{ matrix.toolchain }}
 
       - name: Build
-        run: make
+        run: |
+          make clean
+          make \
+            CC=${{ matrix.cc }} \
+            YQ2_ARCH=${{ matrix.yq2arch }} \
+            CFLAGS="${{ matrix.archflags }} -Wall -pipe -fomit-frame-pointer" \
+            LDFLAGS="${{ matrix.archflags }}"
 
       - name: Package artifacts
         run: |
-          mkdir -p package/gladiator
-          cp release/game/game.so   package/gladiator/
-          cp release/botlib/botlib.so package/gladiator/
-          cp -r botfiles             package/gladiator/
-          mkdir -p package/bspc
-          cp release/bspc/bspc      package/bspc/
-          tar -czf q3a-bot-backport-linux-x86_64.tar.gz -C package .
+          rm -rf gladiator
+          mkdir -p gladiator
+          cp release/game/game.so     gladiator/
+          cp release/botlib/botlib.so gladiator/
+          cp release/bspc/bspc        gladiator/
+          for f in assets/*; do
+            cp -r "$f" gladiator/
+          done
+          tar -czf q3a-bot-backport-linux-${{ matrix.arch }}.tar.gz gladiator
 
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: linux-x86_64
-          path: q3a-bot-backport-linux-x86_64.tar.gz
+          name: linux-${{ matrix.arch }}
+          path: q3a-bot-backport-linux-${{ matrix.arch }}.tar.gz
 
+  # ---------------------------------------------------------------------------
+  # Windows — MinGW64 (x64) and MinGW32 (x86) via MSYS2.
+  # ---------------------------------------------------------------------------
   build-windows:
-    name: Build (Windows ${{ matrix.arch }})
+    name: Build Windows ${{ matrix.arch }}
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - arch: x86_64
+          - arch: x64
             msystem: MINGW64
             pkg_prefix: mingw-w64-x86_64
           - arch: x86
             msystem: MINGW32
             pkg_prefix: mingw-w64-i686
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -65,43 +108,93 @@ jobs:
 
       - name: Build
         shell: msys2 {0}
-        run: make
+        run: |
+          make clean
+          make
 
       - name: Package artifacts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path package/gladiator | Out-Null
-          Copy-Item release/game/game.dll       package/gladiator/
-          Copy-Item release/botlib/botlib.dll   package/gladiator/
-          Copy-Item botfiles                    package/gladiator/ -Recurse
-          New-Item -ItemType Directory -Force -Path package/bspc | Out-Null
-          Copy-Item release/bspc/bspc.exe       package/bspc/
-          Compress-Archive -Path package/* -DestinationPath q3a-bot-backport-windows-${{ matrix.arch }}.zip
+          if (Test-Path gladiator) { Remove-Item gladiator -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path gladiator | Out-Null
+
+          Copy-Item release\game\game.dll     gladiator
+          Copy-Item release\botlib\botlib.dll gladiator
+          Copy-Item release\bspc\bspc.exe     gladiator
+
+          Get-ChildItem assets -Force | ForEach-Object {
+            Copy-Item $_.FullName -Destination gladiator -Recurse -Force
+          }
+
+          Compress-Archive -Path gladiator -DestinationPath q3a-bot-backport-windows-${{ matrix.arch }}.zip -Force
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-${{ matrix.arch }}
           path: q3a-bot-backport-windows-${{ matrix.arch }}.zip
 
+  # ---------------------------------------------------------------------------
+  # macOS — Intel x64 and Apple Silicon arm64. New platform for CI: the
+  # Makefile already has Darwin-specific branches for game/bspc/botlib, but
+  # this path has never been exercised by a CI run before.
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: Build macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-26-intel
+          - arch: arm64
+            runner: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build
+        run: |
+          make clean
+          make
+
+      - name: Package artifacts
+        run: |
+          rm -rf gladiator
+          mkdir -p gladiator
+          cp release/game/game.dylib     gladiator/
+          cp release/botlib/botlib.dylib gladiator/
+          cp release/bspc/bspc           gladiator/
+          for f in assets/*; do
+            cp -r "$f" gladiator/
+          done
+          tar -czf q3a-bot-backport-macos-${{ matrix.arch }}.tar.gz gladiator
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-${{ matrix.arch }}
+          path: q3a-bot-backport-macos-${{ matrix.arch }}.tar.gz
+
   release:
     name: Create GitHub Release
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: artifacts
 
       - name: Create release
         run: |
+          files=$(find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \))
+          echo "Release assets:"
+          echo "$files"
           gh release create "${{ github.ref_name }}" \
-            artifacts/linux-x86_64/q3a-bot-backport-linux-x86_64.tar.gz \
-            artifacts/windows-x86_64/q3a-bot-backport-windows-x86_64.zip \
-            artifacts/windows-x86/q3a-bot-backport-windows-x86.zip \
+            $files \
             --repo "${{ github.repository }}" \
             --title "Q3A Bot Backport for Quake II ${{ github.ref_name }}" \
             --generate-notes
