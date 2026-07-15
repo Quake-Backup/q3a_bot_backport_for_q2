@@ -181,37 +181,57 @@ static ID_INLINE float BigFloat(const float *l) { return FloatSwap(l); }
 
 #define	PATH_SEP	'/'
 
+/* PowerPC-only register-shuffle helpers, unused (and uncompilable — these
+ * are PowerPC asm mnemonics) on Intel/Apple Silicon Macs. Confirmed dead
+ * code outside this definition on any architecture: nothing in this
+ * codebase calls __rlwimi/__dcbt/__lwbrx/__lhbrx/__fctiw. */
+#ifdef __ppc__
 #define __rlwimi(out, in, shift, maskBegin, maskEnd) asm("rlwimi %0,%1,%2,%3,%4" : "=r" (out) : "r" (in), "i" (shift), "i" (maskBegin), "i" (maskEnd))
 #define __dcbt(addr, offset) asm("dcbt %0,%1" : : "b" (addr), "r" (offset))
 
 static inline unsigned int __lwbrx(register void *addr, register int offset) {
     register unsigned int word;
-    
+
     asm("lwbrx %0,%2,%1" : "=r" (word) : "r" (addr), "b" (offset));
     return word;
 }
 
 static inline unsigned short __lhbrx(register void *addr, register int offset) {
     register unsigned short halfword;
-    
+
     asm("lhbrx %0,%2,%1" : "=r" (halfword) : "r" (addr), "b" (offset));
     return halfword;
 }
 
 static inline float __fctiw(register float f) {
     register float fi;
-    
+
     asm("fctiw %0,%1" : "=f" (fi) : "f" (f));
 
     return fi;
 }
+#endif /* __ppc__ */
 
+/* Byte-order helpers: this MACOS_X block originally assumed a big-endian
+ * PowerPC host unconditionally (Little*=swap, Big*=passthrough), which was
+ * correct when Mac OS X only ran on PowerPC but silently corrupts BSP/AAS
+ * loading on little-endian Intel/Apple Silicon. Fork on idppc exactly like
+ * the __linux__/__FreeBSD__ sections below already do. */
+#if !idppc
+static inline short BigShort( short l) { return ShortSwap(l); }
+#define LittleShort
+static inline int BigLong(int l) { return LongSwap(l); }
+#define LittleLong
+static inline float BigFloat(const float *l) { return FloatSwap(l); }
+#define LittleFloat
+#else
 #define BigShort
 static inline short LittleShort(short l) { return ShortSwap(l); }
 #define BigLong
 static inline int LittleLong (int l) { return LongSwap(l); }
 #define BigFloat
 static inline float LittleFloat (const float l) { return FloatSwap(&l); }
+#endif
 
 #endif
 

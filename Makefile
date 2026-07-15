@@ -284,13 +284,26 @@ bspc:
 	${Q}mkdir -p release/bspc
 	$(MAKE) release/bspc/bspc
 
+# -DMACOS_X: game_q3/q_shared.h gates ID_INLINE (and stricmp/MAC_STATIC/etc)
+# behind an explicit WIN32/MACOS_X/__linux__/__FreeBSD__ check with no
+# fallback and no __APPLE__ check of its own — clang predefines __APPLE__/
+# __MACH__, not the id-Software-specific MACOS_X token, so it has to be
+# supplied here for botlib/bspc sources that include that header.
 build/bspc/%.o: %.c
 	@echo "===> CC $<"
 	${Q}mkdir -p $(@D)
-	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -D_FORTIFY_SOURCE=2 -o $@ $<
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Dstricmp=strcasecmp -DMAC_STATIC= -DQDECL= -DBSPC -DMACOS_X -D_FORTIFY_SOURCE=2 -o $@ $<
 
-release/bspc/bspc : CFLAGS += -fPIC
-release/bspc/bspc : LDFLAGS += -Wl,--allow-multiple-definition
+# bspc links botlib/*.o alongside bspc's own parallel utility
+# implementations (l_cmd.c/l_mem.c/l_math.c/etc), which tentatively define
+# a handful of the same globals (aassettings/wadfile/outheader/header) —
+# by design, not a bug: -Wl,--allow-multiple-definition on Linux/Windows
+# tells GNU ld to keep the first definition and ignore the rest. Apple's
+# ld has no equivalent flag (it rejects the flag itself as unrecognized),
+# so use -fcommon here instead: it restores the pre-C11 "tentative
+# definition" compile behaviour that makes these merge cleanly on any
+# linker, without needing linker-specific leniency at all.
+release/bspc/bspc : CFLAGS += -fPIC -fcommon
 
 else # not Windows or Darwin
 
@@ -331,10 +344,11 @@ botlib:
 	${Q}mkdir -p release/botlib
 	$(MAKE) release/botlib/botlib.dylib
 
+# -DMACOS_X: see the matching comment on the bspc Darwin compile rule above.
 build/botlib/%.o: %.c
 	@echo "===> CC $<"
 	${Q}mkdir -p $(@D)
-	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -DMACOS_X -o $@ $<
 
 release/botlib/botlib.dylib : CFLAGS += -fPIC
 release/botlib/botlib.dylib : LDFLAGS += -shared

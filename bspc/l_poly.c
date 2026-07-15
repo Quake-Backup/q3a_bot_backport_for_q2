@@ -20,7 +20,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
+#if !defined(__APPLE__)
+/* malloc.h doesn't exist on macOS; stdlib.h (pulled in by l_cmd.h below)
+ * already declares malloc/calloc/realloc/free, which is all this file uses. */
 #include <malloc.h>
+#endif
 #include "l_cmd.h"
 #include "l_math.h"
 #include "l_poly.h"

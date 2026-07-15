@@ -24,7 +24,17 @@
 #if defined(WIN32) || defined(_WIN32)
 #include <windows.h>
 #else
-//LINUX?
+/* windows.h supplies min()/max()/_isnan()/stricmp() for the bot code
+ * below on MSVC; replicate them with their POSIX/C99 equivalents so the
+ * same call sites link on Linux/macOS/BSD. (Linux's shared-library linker
+ * allows undefined symbols by default and stayed silent about this; a
+ * strict linker like macOS's ld does not.) */
+#include <math.h>
+#include <strings.h>
+#define min(a,b)	(((a) < (b)) ? (a) : (b))
+#define max(a,b)	(((a) > (b)) ? (a) : (b))
+#define _isnan(x)	isnan(x)
+#define stricmp		strcasecmp
 #endif
 #endif
 
