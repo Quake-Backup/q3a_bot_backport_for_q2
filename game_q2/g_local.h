@@ -4,13 +4,19 @@
 #define BOT								//Gladiator Bot
 #define BOT_IMPORT					//game import redirection
 //#define BOT_DEBUG						//bot debug
-//#define OBSERVER						//observer mode
+#define OBSERVER						//observer mode
 #define TRIGGER_COUNTING			//trigger counting
 #define TRIGGER_LOG					//trigger log
 #define FUNC_BUTTON_ROTATING		//rotating button
 #define LOGFILE						//log file
 #define CLIENTLAG						//client lag
 #define VWEP							//VWep patch
+// A stray -DZOID on the compiler command line (e.g. inherited from an old
+// Q2 CTF build habit via an exported CFLAGS) expands to 1, conflicting with
+// this header's empty expansion and triggering a "ZOID redefined" warning
+// in every game/*.c that includes g_local.h. #undef first so this
+// definition is always the authoritative one, regardless of the command line.
+#undef ZOID
 #define ZOID							//CTF
 #define CTF_HOOK						//CTF direct hook
 #define ROCKETARENA					//Rocket Arena 2
